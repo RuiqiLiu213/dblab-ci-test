@@ -1,0 +1,52 @@
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  migration_job:
+    runs-on: ubuntu-latest
+    name: CI migration
+    steps:
+      # Checkout the source code
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      # Run DB migrations with the public action
+      - name: DB migrations checker with DLE
+        #uses: postgres-ai/dle-github-actions@v0.1.1
+        uses: postgres-ai/dle-github-actions@master
+        id: db-migrations
+        with:
+          dbname: test
+          commands:  |
+            flyway -url=jdbc:postgresql://${DLE_HOST}:${PGPORT}/${PGDATABASE} -user=${PGUSER} -password=${PGPASSWORD} -locations=filesystem:/repo/flyway/sql migrate
+            flyway -url=jdbc:postgresql://${DLE_HOST}:${PGPORT}/${PGDATABASE} -user=${PGUSER} -password=${PGPASSWORD} -locations=filesystem:/repo/flyway/sql info
+          migration_envs: |
+            DATABASE_LAB_CI=true
+            FLYWAY_CONNECT_RETRIES=3
+            FLYWAY_BASELINE_ON_MIGRATE=true
+            DLE_HOST=172.17.0.1
+          download_artifacts: true
+          observation_interval: "1"
+          max_lock_duration: "1"
+          max_duration: "600"
+        env:
+          DLMC_CI_ENDPOINT: ${{ secrets.DLMC_CI_ENDPOINT }}
+          DLMC_VERIFICATION_TOKEN: ${{ secrets.DLMC_VERIFICATION_TOKEN }}
+
+      # Download artifacts
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          name: artifacts
+          path: artifacts/*
+          if-no-files-found: ignore
+        if: always()
+
+      # Show migration summary
+      - name: Get the response status
+        run: echo "${{ steps.db-migrations.outputs.response }}"
